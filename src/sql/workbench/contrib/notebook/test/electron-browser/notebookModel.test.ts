@@ -15,7 +15,7 @@ import { LocalContentManager } from 'sql/workbench/services/notebook/common/loca
 import { NotebookManagerStub } from 'sql/workbench/contrib/notebook/test/stubs';
 import { NotebookModel } from 'sql/workbench/contrib/notebook/browser/models/notebookModel';
 import { ModelFactory } from 'sql/workbench/contrib/notebook/browser/models/modelFactory';
-import { IClientSession, INotebookModelOptions, NotebookContentChange } from 'sql/workbench/contrib/notebook/browser/models/modelInterfaces';
+import { IClientSession, INotebookModelOptions, NotebookContentChange, ICellModel } from 'sql/workbench/contrib/notebook/browser/models/modelInterfaces';
 import { ClientSession } from 'sql/workbench/contrib/notebook/browser/models/clientSession';
 import { CellTypes, NotebookChangeType } from 'sql/workbench/contrib/notebook/common/models/contracts';
 import { Deferred } from 'sql/base/common/promise';
@@ -31,6 +31,7 @@ import { NullLogService } from 'vs/platform/log/common/log';
 import { TestConnectionManagementService } from 'sql/platform/connection/test/common/testConnectionManagementService';
 import { isUndefinedOrNull } from 'vs/base/common/types';
 import { assign } from 'vs/base/common/objects';
+import { Schemas } from 'vs/base/common/network';
 
 let expectedNotebookContent: nb.INotebookContents = {
 	cells: [{
@@ -80,7 +81,7 @@ let notificationService: TypeMoq.Mock<INotificationService>;
 let capabilitiesService: TypeMoq.Mock<ICapabilitiesService>;
 let instantiationService: IInstantiationService;
 
-suite('notebook model', function (): void {
+suite('NotebookModel', function (): void {
 	let notebookManagers = [new NotebookManagerStub()];
 	let memento: TypeMoq.Mock<Memento>;
 	let queryConnectionService: TypeMoq.Mock<TestConnectionManagementService>;
@@ -288,5 +289,44 @@ suite('notebook model', function (): void {
 		assert(model.trustedMode);
 		assert(!isUndefinedOrNull(actualChanged));
 		assert.equal(actualChanged.changeType, NotebookChangeType.TrustChanged);
+	});
+
+	test('Getters and setters', async function () {
+		let model = new NotebookModel(defaultModelOptions, undefined, logService, undefined, undefined);
+
+		assert.strictEqual(model.notebookOptions, defaultModelOptions);
+
+		assert.strictEqual(model.notebookUri, defaultModelOptions.notebookUri);
+		let testUri = URI.from({ scheme: Schemas.untitled, path: 'TestPath' });
+		model.notebookUri = testUri;
+		assert.strictEqual(model.notebookUri, testUri);
+
+		assert.strictEqual(model.defaultKernel, defaultModelOptions.defaultKernel);
+
+		assert.strictEqual(model.providerId, defaultModelOptions.providerId);
+
+		assert(model.isSessionReady === false);
+
+		assert.strictEqual(model.context, undefined);
+
+		// Events
+		assert(model.kernelChanged !== undefined);
+		assert(model.kernelsChanged !== undefined);
+		assert(model.layoutChanged !== undefined);
+		assert(model.contextsChanged !== undefined);
+		assert(model.contextsLoading !== undefined);
+		assert(model.onError !== undefined);
+		assert(model.onClientSessionReady !== undefined);
+		assert(model.onProviderIdChange !== undefined);
+		assert(model.onValidConnectionSelected !== undefined);
+		assert(model.onActiveCellChanged !== undefined);
+
+		// Active cell
+		let testCell = <ICellModel>{
+			id: 'TestId',
+			cellUri: testUri
+		};
+		model.activeCell = testCell;
+		assert.strictEqual(model.activeCell, testCell);
 	});
 });
