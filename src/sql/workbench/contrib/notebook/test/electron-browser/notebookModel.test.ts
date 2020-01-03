@@ -163,6 +163,29 @@ suite('NotebookModel', function (): void {
 		assert(model.trustedMode);
 	});
 
+	test('Should set trustedMode for cells when changing model trustedMode', async function (): Promise<void> {
+		let mockContentManager = TypeMoq.Mock.ofType(LocalContentManager);
+		mockContentManager.setup(c => c.getNotebookContents(TypeMoq.It.isAny())).returns(() => Promise.resolve(expectedNotebookContent));
+		notebookManagers[0].contentManager = mockContentManager.object;
+
+		let model = new NotebookModel(defaultModelOptions, undefined, logService, undefined, undefined);
+		await model.loadContents(false);
+		await model.requestModelLoad();
+
+		assert(model.cells && model.cells.length > 0, 'No model cells were loaded');
+
+		assert(!model.trustedMode);
+		model.cells.forEach(cell => {
+			assert(!cell.trustedMode);
+		});
+
+		model.trustedMode = true;
+		assert(model.trustedMode);
+		model.cells.forEach(cell => {
+			assert(cell.trustedMode);
+		});
+	});
+
 	// test('Should throw if model load fails', async function(): Promise<void> {
 	// 	// Given a call to get Contents fails
 	// 	let error = new Error('File not found');
@@ -328,5 +351,14 @@ suite('NotebookModel', function (): void {
 		};
 		model.activeCell = testCell;
 		assert.strictEqual(model.activeCell, testCell);
+
+		// Notebook manager
+		// model.notebookManagers
+		// model.notebookManager
+		// model.getNotebookManager()
+		// model.hasServerManager
+
+		// Specs
+		// model.specs
 	});
 });
