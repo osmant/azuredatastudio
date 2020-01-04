@@ -15,7 +15,7 @@ import { LocalContentManager } from 'sql/workbench/services/notebook/common/loca
 import { NotebookManagerStub } from 'sql/workbench/contrib/notebook/test/stubs';
 import { NotebookModel } from 'sql/workbench/contrib/notebook/browser/models/notebookModel';
 import { ModelFactory } from 'sql/workbench/contrib/notebook/browser/models/modelFactory';
-import { IClientSession, INotebookModelOptions, NotebookContentChange, ICellModel } from 'sql/workbench/contrib/notebook/browser/models/modelInterfaces';
+import { IClientSession, INotebookModelOptions, NotebookContentChange, ICellModel, IContentManager } from 'sql/workbench/contrib/notebook/browser/models/modelInterfaces';
 import { ClientSession } from 'sql/workbench/contrib/notebook/browser/models/clientSession';
 import { CellTypes, NotebookChangeType } from 'sql/workbench/contrib/notebook/common/models/contracts';
 import { Deferred } from 'sql/base/common/promise';
@@ -164,11 +164,15 @@ suite('NotebookModel', function (): void {
 	});
 
 	test('Should set trustedMode for cells when changing model trustedMode', async function (): Promise<void> {
-		let mockContentManager = TypeMoq.Mock.ofType(LocalContentManager);
-		mockContentManager.setup(c => c.getNotebookContents(TypeMoq.It.isAny())).returns(() => Promise.resolve(expectedNotebookContent));
-		notebookManagers[0].contentManager = mockContentManager.object;
+		let testContentManager = new class implements IContentManager {
+			public loadContent(): Promise<nb.INotebookContents> {
+				return Promise.resolve(expectedNotebookContent);
+			}
+		};
+		let testOptions = Object.assign({}, defaultModelOptions);
+		testOptions.contentManager = testContentManager;
 
-		let model = new NotebookModel(defaultModelOptions, undefined, logService, undefined, undefined);
+		let model = new NotebookModel(testOptions, undefined, logService, undefined, undefined);
 		await model.loadContents(false);
 		await model.requestModelLoad();
 
