@@ -29,21 +29,6 @@ import { getErrorMessage } from 'vs/base/common/errors';
 import { find, firstIndex } from 'vs/base/common/arrays';
 import { startsWith } from 'vs/base/common/strings';
 
-/*
-* Used to control whether a message in a dialog/wizard is displayed as an error,
-* warning, or informational message. Default is error.
-*/
-export enum MessageLevel {
-	Error = 0,
-	Warning = 1,
-	Information = 2
-}
-
-export class ErrorInfo {
-	constructor(public readonly message: string, public readonly severity: MessageLevel) {
-	}
-}
-
 export class NotebookModel extends Disposable implements INotebookModel {
 	private _contextsChangedEmitter = new Emitter<void>();
 	private _contextsLoadingEmitter = new Emitter<void>();

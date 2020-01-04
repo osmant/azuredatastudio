@@ -367,6 +367,15 @@ suite('NotebookModel', function (): void {
 		model.standardKernels = testStandardKernels;
 		assert.deepStrictEqual(model.standardKernels, testStandardKernels);
 
+		let kernelDisplayNames = model.standardKernelsDisplayName();
+		assert.deepStrictEqual(kernelDisplayNames, [testStandardKernels[0].displayName]);
+
+		// Connection provider IDs
+		let providerIDs = model.getApplicableConnectionProviderIds(testStandardKernels[0].displayName);
+		assert.deepStrictEqual(providerIDs, testStandardKernels[0].connectionProviderIds);
+
+		assert.deepStrictEqual(model.getApplicableConnectionProviderIds(undefined), []);
+
 		// Notebook manager
 		// model.notebookManagers
 		// model.notebookManager
