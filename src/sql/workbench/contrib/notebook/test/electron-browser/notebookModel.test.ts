@@ -32,6 +32,7 @@ import { TestConnectionManagementService } from 'sql/platform/connection/test/co
 import { isUndefinedOrNull } from 'vs/base/common/types';
 import { assign } from 'vs/base/common/objects';
 import { Schemas } from 'vs/base/common/network';
+import { IStandardKernelWithProvider } from 'sql/workbench/contrib/notebook/browser/models/notebookUtils';
 
 let expectedNotebookContent: nb.INotebookContents = {
 	cells: [{
@@ -355,6 +356,16 @@ suite('NotebookModel', function (): void {
 		};
 		model.activeCell = testCell;
 		assert.strictEqual(model.activeCell, testCell);
+
+		// Standard kernels
+		let testStandardKernels: IStandardKernelWithProvider[] = [{
+			name: 'testName',
+			displayName: 'testDisplayName',
+			connectionProviderIds: ['testId1', 'testId2'],
+			notebookProvider: 'testProvider'
+		}];
+		model.standardKernels = testStandardKernels;
+		assert.deepStrictEqual(model.standardKernels, testStandardKernels);
 
 		// Notebook manager
 		// model.notebookManagers
