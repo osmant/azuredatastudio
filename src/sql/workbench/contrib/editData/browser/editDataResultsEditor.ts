@@ -15,11 +15,9 @@ import { BaseEditor } from 'vs/workbench/browser/parts/editor/baseEditor';
 import * as types from 'vs/base/common/types';
 
 import { IQueryModelService } from 'sql/platform/query/common/queryModel';
-import { bootstrapAngular } from 'sql/workbench/services/bootstrap/browser/bootstrapService';
-import { BareResultsGridInfo } from 'sql/workbench/contrib/query/browser/queryResultsEditor';
+import { BareResultsGridInfo, getBareResultsGridInfoStyles } from 'sql/workbench/contrib/query/browser/queryResultsEditor';
 import { IEditDataComponentParams } from 'sql/workbench/services/bootstrap/common/bootstrapParams';
-import { EditDataModule } from 'sql/workbench/contrib/editData/browser/editData.module';
-import { EDITDATA_SELECTOR } from 'sql/workbench/contrib/editData/browser/editData.component';
+import { EditDataGridPanel } from 'sql/workbench/contrib/editData/browser/editDataGridPanel';
 import { EditDataResultsInput } from 'sql/workbench/contrib/editData/browser/editDataResultsInput';
 import { CancellationToken } from 'vs/base/common/cancellation';
 import { IStorageService } from 'vs/platform/storage/common/storage';
@@ -30,6 +28,8 @@ export class EditDataResultsEditor extends BaseEditor {
 	public static AngularSelectorString: string = 'slickgrid-container.slickgridContainer';
 	protected _input: EditDataResultsInput;
 	protected _rawOptions: BareResultsGridInfo;
+
+	private styleSheet = DOM.createStyleSheet();
 
 	constructor(
 		@ITelemetryService telemetryService: ITelemetryService,
@@ -50,13 +50,17 @@ export class EditDataResultsEditor extends BaseEditor {
 	}
 
 	public get input(): EditDataResultsInput {
-		return this._input;
+		return this._input as EditDataResultsInput;
 	}
 
 	public createEditor(parent: HTMLElement): void {
+		this.styleSheet.remove();
+		parent.appendChild(this.styleSheet);
 	}
 
 	public dispose(): void {
+		this.styleSheet.remove();
+		this.styleSheet = undefined;
 		super.dispose();
 	}
 
@@ -67,9 +71,13 @@ export class EditDataResultsEditor extends BaseEditor {
 		super.setInput(input, options, CancellationToken.None);
 		this._applySettings();
 		if (!input.hasBootstrapped) {
-			this._bootstrapAngular();
+			this.createGridPanel();
 		}
 		return Promise.resolve<void>(null);
+	}
+
+	clearInput() {
+		super.clearInput();
 	}
 
 	private _applySettings() {
@@ -85,14 +93,12 @@ export class EditDataResultsEditor extends BaseEditor {
 				cssRuleText = this._rawOptions.cellPadding.join('px ') + 'px;';
 			}
 			let content = `.grid .slick-cell { padding: ${cssRuleText}; }`;
+			content += `.grid-panel .monaco-table, .message-tree { ${getBareResultsGridInfoStyles(this._rawOptions)} }`;
 			this.input.css.innerHTML = content;
 		}
 	}
 
-	/**
-	 * Load the angular components and record for this input that we have done so
-	 */
-	private _bootstrapAngular(): void {
+	private createGridPanel(): void {
 		let input = <EditDataResultsInput>this.input;
 		let uri = input.uri;
 
@@ -109,17 +115,15 @@ export class EditDataResultsEditor extends BaseEditor {
 		// Note: pass in input so on disposal this is cleaned up.
 		// Otherwise many components will be left around and be subscribed
 		// to events from the backing data service
-		const parent = input.container;
 		let params: IEditDataComponentParams = {
 			dataService: dataService,
 			onSaveViewState: input.onSaveViewStateEmitter.event,
 			onRestoreViewState: input.onRestoreViewStateEmitter.event
 		};
-		bootstrapAngular(this._instantiationService,
-			EditDataModule,
-			parent,
-			EDITDATA_SELECTOR,
-			params,
-			input);
+
+		this._applySettings();
+
+		let editGridPanel = this._register(this._instantiationService.createInstance(EditDataGridPanel, params));
+		editGridPanel.render(this.getContainer());
 	}
 }
