@@ -10,7 +10,6 @@ import { Table } from 'sql/base/browser/ui/table/table';
 
 import { IGridDataSet } from 'sql/workbench/contrib/grid/common/interfaces';
 import * as Services from 'sql/base/browser/ui/table/formatters';
-import { IEditDataComponentParams } from 'sql/workbench/services/bootstrap/common/bootstrapParams';
 import { GridParentComponent } from 'sql/workbench/contrib/editData/browser/gridParentComponent';
 import { EditDataGridActionProvider } from 'sql/workbench/contrib/editData/browser/editDataGridActions';
 import { IQueryEditorService } from 'sql/workbench/services/queryEditor/common/queryEditorService';
@@ -18,7 +17,7 @@ import { RowNumberColumn } from 'sql/base/browser/ui/table/plugins/rowNumberColu
 import { AutoColumnSize } from 'sql/base/browser/ui/table/plugins/autoSizeColumns.plugin';
 import { AdditionalKeyBindings } from 'sql/base/browser/ui/table/plugins/additionalKeyBindings.plugin';
 import { escape } from 'sql/base/common/strings';
-
+import { DataService } from 'sql/workbench/contrib/grid/common/dataService';
 import { INotificationService } from 'vs/platform/notification/common/notification';
 import Severity from 'vs/base/common/severity';
 import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
@@ -32,7 +31,7 @@ import { StandardKeyboardEvent } from 'vs/base/browser/keyboardEvent';
 import { EditUpdateCellResult } from 'azdata';
 import { ILogService } from 'vs/platform/log/common/log';
 import { deepClone, assign } from 'vs/base/common/objects';
-import { Emitter } from 'vs/base/common/event';
+import { Emitter, Event } from 'vs/base/common/event';
 import { equals } from 'vs/base/common/arrays';
 
 export class EditDataGridPanel extends GridParentComponent {
@@ -53,6 +52,7 @@ export class EditDataGridPanel extends GridParentComponent {
 	private dataSet: IGridDataSet;
 	private oldDataRows: VirtualizedCollection<any>;
 	private firstRender = true;
+	private firstLoad = true;
 	private enableEditing = true;
 	// Current selected cell state
 	private currentCell: { row: number, column: number, isEditable: boolean, isDirty: boolean };
@@ -81,24 +81,26 @@ export class EditDataGridPanel extends GridParentComponent {
 	};
 
 	constructor(
-		params: IEditDataComponentParams,
-		@IInstantiationService private instantiationService: IInstantiationService,
-		@INotificationService private notificationService: INotificationService,
-		@IContextMenuService contextMenuService: IContextMenuService,
-		@IKeybindingService keybindingService: IKeybindingService,
-		@IContextKeyService contextKeyService: IContextKeyService,
-		@IConfigurationService configurationService: IConfigurationService,
-		@IClipboardService clipboardService: IClipboardService,
-		@IQueryEditorService queryEditorService: IQueryEditorService,
-		@ILogService logService: ILogService
+		dataService: DataService,
+		onSaveViewState: Event<void>,
+		onRestoreViewState: Event<void>,
+		@IInstantiationService protected instantiationService: IInstantiationService,
+		@INotificationService protected notificationService: INotificationService,
+		@IContextMenuService protected contextMenuService: IContextMenuService,
+		@IKeybindingService protected keybindingService: IKeybindingService,
+		@IContextKeyService protected contextKeyService: IContextKeyService,
+		@IConfigurationService protected configurationService: IConfigurationService,
+		@IClipboardService protected clipboardService: IClipboardService,
+		@IQueryEditorService protected queryEditorService: IQueryEditorService,
+		@ILogService protected logService: ILogService
 	) {
 		super(contextMenuService, keybindingService, contextKeyService, configurationService, clipboardService, queryEditorService, logService);
 		this.nativeElement = document.createElement('editdatagridpanel');
 		this.nativeElement.className = 'slickgridContainer';
-		this.dataService = params.dataService;
+		this.dataService = dataService;
 		this.actionProvider = this.instantiationService.createInstance(EditDataGridActionProvider, this.dataService, this.onGridSelectAll(), this.onDeleteRow(), this.onRevertRow());
-		params.onRestoreViewState(() => this.restoreViewState());
-		params.onSaveViewState(() => this.saveViewState());
+		onRestoreViewState(() => this.restoreViewState());
+		onSaveViewState(() => this.saveViewState());
 		this.onInit();
 	}
 
@@ -133,7 +135,6 @@ export class EditDataGridPanel extends GridParentComponent {
 					break;
 			}
 		});
-
 		this.dataService.onLoaded();
 	}
 
@@ -175,9 +176,16 @@ export class EditDataGridPanel extends GridParentComponent {
 			let returnVal = '';
 			// replace the line breaks with space since the edit text control cannot
 			// render line breaks and strips them, updating the value.
-			if (Services.DBCellValue.isDBCellValue(value) && !value.isNull) {
+			/* tslint:disable:no-null-keyword */
+			let valueMissing = value === undefined || value === null || (Services.DBCellValue.isDBCellValue(value) && value.isNull);
+			if (valueMissing) {
+				/* tslint:disable:no-null-keyword */
+				returnVal = null;
+			}
+			else if (Services.DBCellValue.isDBCellValue(value)) {
 				returnVal = this.spacefyLinebreaks(value.displayValue);
-			} else if (typeof value === 'string') {
+			}
+			else if (typeof value === 'string') {
 				returnVal = this.spacefyLinebreaks(value);
 			}
 			return returnVal;
@@ -369,7 +377,7 @@ export class EditDataGridPanel extends GridParentComponent {
 					id: columnIndex,
 					name: escape(c.columnName),
 					field: columnIndex,
-					formatter: Services.textFormatter,
+					formatter: this.getColumnFormatter,
 					isEditable: c.isUpdatable
 				};
 			}))
@@ -392,6 +400,7 @@ export class EditDataGridPanel extends GridParentComponent {
 		this.removingNewRow = false;
 		this.newRowVisible = false;
 		this.dirtyCells = [];
+
 	}
 
 	/**
@@ -411,56 +420,50 @@ export class EditDataGridPanel extends GridParentComponent {
 	}
 
 	private refreshGrid(): Thenable<void> {
-		return new Promise<void>((resolve, reject) => {
+		return new Promise<void>(async (resolve, reject) => {
 			const self = this;
 			clearTimeout(self.refreshGridTimeoutHandle);
 			this.refreshGridTimeoutHandle = setTimeout(() => {
-				for (let i = 0; i < self.placeHolderDataSets.length; i++) {
-					if (self.dataSet && self.placeHolderDataSets[i].resized) {
-						self.placeHolderDataSets[i].dataRows = self.dataSet.dataRows;
-						self.placeHolderDataSets[i].resized.fire();
-					}
+
+				if (self.dataSet && self.placeHolderDataSets[0].resized) {
+					self.placeHolderDataSets[0].dataRows = self.dataSet.dataRows;
+					self.placeHolderDataSets[0].resized.fire();
 				}
+
 
 				if (self.oldDataRows !== self.placeHolderDataSets[0].dataRows) {
 					self.detectChange();
 					self.oldDataRows = self.placeHolderDataSets[0].dataRows;
 				}
 
-
 				if (self.firstRender) {
 					let setActive = function () {
-						if (self.firstRender && self.tables.length > 0) {
-							self.tables[0].setActive();
-							self.tables[0].rerenderGrid(0, self.dataSet.dataRows.getLength());
-							self.tables[0].resizeCanvas();
+						if (self.firstRender && self.table) {
+							self.table.setActive();
 							self.firstRender = false;
 						}
 					};
-
-					setTimeout(() => {
-						setActive();
-					});
+					setTimeout(() => setActive());
 				}
-
 				resolve();
 			}, self.refreshGridTimeoutInMs);
 		});
 	}
 
 	protected detectChange(): void {
-		if (this.firstRender) {
+		if (this.firstLoad) {
 			this.handleChanges({
-				['dataRows']: { currentValue: this.dataSet.dataRows, firstChange: this.firstRender, previousValue: undefined },
-				['columnDefinitions']: { currentValue: this.dataSet.columnDefinitions, firstChange: this.firstRender, previousValue: undefined }
+				['dataRows']: { currentValue: this.dataSet.dataRows, firstChange: this.firstLoad, previousValue: undefined },
+				['columnDefinitions']: { currentValue: this.dataSet.columnDefinitions, firstChange: this.firstLoad, previousValue: undefined }
 			});
 			this.handleInitializeTable();
+			this.firstLoad = false;
 		}
 		else {
 
-			this.tables[0].setData(this.gridDataProvider);
+			this.table.setData(this.gridDataProvider);
 			this.handleChanges({
-				['dataRows']: { currentValue: this.dataSet.dataRows, firstChange: this.firstRender, previousValue: this.oldDataRows }
+				['dataRows']: { currentValue: this.dataSet.dataRows, firstChange: this.firstLoad, previousValue: this.oldDataRows }
 			});
 		}
 	}
@@ -477,22 +480,21 @@ export class EditDataGridPanel extends GridParentComponent {
 
 	/**
 	 * Force re-rendering of the results grids. Calling this upon unhide (upon focus) fixes UI
-	 * glitches that occur when a QueryRestulsEditor is hidden then unhidden while it is running a query.
+	 * glitches that occur when a QueryResultsEditor is hidden then unhidden while it is running a query.
 	 */
-	refreshResultsets(): void {
+	refreshDatasets(): void {
 		let tempRenderedDataSets = this.renderedDataSets;
 		this.renderedDataSets = [];
 		this.handleChanges({
-			['dataRows']: { currentValue: undefined, firstChange: this.firstRender, previousValue: this.dataSet.dataRows },
-			['columnDefinitions']: { currentValue: undefined, firstChange: this.firstRender, previousValue: this.dataSet.columnDefinitions }
+			['dataRows']: { currentValue: undefined, firstChange: this.firstLoad, previousValue: this.dataSet.dataRows },
+			['columnDefinitions']: { currentValue: undefined, firstChange: this.firstLoad, previousValue: this.dataSet.columnDefinitions }
 		});
 		this.renderedDataSets = tempRenderedDataSets;
 		this.handleChanges({
-			['dataRows']: { currentValue: this.renderedDataSets[0].dataRows, firstChange: this.firstRender, previousValue: undefined },
-			['columnDefinitions']: { currentValue: this.renderedDataSets[0].columnDefinitions, firstChange: this.firstRender, previousValue: undefined }
+			['dataRows']: { currentValue: this.renderedDataSets[0].dataRows, firstChange: this.firstLoad, previousValue: undefined },
+			['columnDefinitions']: { currentValue: this.renderedDataSets[0].columnDefinitions, firstChange: this.firstLoad, previousValue: undefined }
 		});
 	}
-
 
 	// Private Helper Functions ////////////////////////////////////////////////////////////////////////////
 
@@ -579,7 +581,7 @@ export class EditDataGridPanel extends GridParentComponent {
 
 	// Adds CSS classes to slickgrid cells to indicate a dirty state
 	private setCellDirtyState(row: number, column: number, dirtyState: boolean): void {
-		let slick: any = this.tables[0];
+		let slick: any = this.table;
 		let grid = slick._grid;
 		if (dirtyState) {
 			// Change cell color
@@ -597,7 +599,7 @@ export class EditDataGridPanel extends GridParentComponent {
 
 	// Adds CSS classes to slickgrid rows to indicate a dirty state
 	private setRowDirtyState(row: number, dirtyState: boolean): void {
-		let slick: any = this.tables[0];
+		let slick: any = this.table;
 		let grid = slick._grid;
 		if (dirtyState) {
 			// Change row header color
@@ -667,7 +669,7 @@ export class EditDataGridPanel extends GridParentComponent {
 	}
 
 	private focusCell(row: number, column: number, forceEdit: boolean = true): void {
-		let slick: any = this.tables[0];
+		let slick: any = this.table;
 		let grid = slick._grid;
 		grid.gotoCell(row, column, forceEdit);
 	}
@@ -685,7 +687,7 @@ export class EditDataGridPanel extends GridParentComponent {
 	}
 
 	private saveViewState(): void {
-		let grid = this.tables[0];
+		let grid = this.table;
 		let self = this;
 		if (grid) {
 			let gridSelections = grid.getSelectedRanges();
@@ -714,8 +716,8 @@ export class EditDataGridPanel extends GridParentComponent {
 
 	private restoreViewState(): void {
 		if (this.savedViewState) {
-			// Row selections are undefined in original slickgrid, removed for no purpose -alma1 1/10/19
-			let viewport = ((this.tables[0] as any)._grid.getCanvasNode() as HTMLElement).parentElement;
+			// Row selections are undefined in original slickgrid, removed for no purpose
+			let viewport = ((this.table as any)._grid.getCanvasNode() as HTMLElement).parentElement;
 			viewport.scrollLeft = this.savedViewState.scrollLeft;
 			viewport.scrollTop = this.savedViewState.scrollTop;
 			this.savedViewState = undefined;
@@ -743,7 +745,7 @@ export class EditDataGridPanel extends GridParentComponent {
 	}
 
 	private isCellOnScreen(row: number, column: number): boolean {
-		let slick: any = this.tables[0];
+		let slick: any = this.table;
 		let grid = slick._grid;
 		let viewport = grid.getViewport();
 		let cellBox = grid.getCellNodeBox(row, column);
@@ -789,34 +791,28 @@ export class EditDataGridPanel extends GridParentComponent {
 				showHeader: true,
 				rowHeight: this.rowHeight,
 				defaultColumnWidth: 120,
+				defaultFormatter: undefined,
 				editable: this.enableEditing,
 				autoEdit: this.enableEditing,
-				enableAddRow: false, // TODO change when we support enableAddRow
+				enableAddRow: false,
 				enableAsyncPostRender: false,
 				editorFactory: {
 					getEditor: (column: ISlickColumn<any>) => this.getColumnEditor(column)
-				},
-				formatterFactory: {
-					getFormatter: this.getFormatter
 				}
 			};
 
-
 			if (dataSet.columnDefinitions) {
-
-				this.tables[0] = new Table(this.nativeElement.appendChild(newGridContainer), { dataProvider: this.gridDataProvider, columns: dataSet.columnDefinitions }, options);
-
+				this.table = new Table(this.nativeElement.appendChild(newGridContainer), { dataProvider: this.gridDataProvider, columns: dataSet.columnDefinitions }, options);
 				for (let plugin of this.plugins) {
-					this.tables[0].registerPlugin(plugin);
+					this.table.registerPlugin(plugin);
 				}
-
-				for (let i = 0; i < this.placeHolderDataSets[0].columnDefinitions.length; i++) {
-					this.columnNameToIndex[this.placeHolderDataSets[0].columnDefinitions[i].name] = i;
+				for (let i = 0; i < dataSet.columnDefinitions.length; i++) {
+					this.columnNameToIndex[this.dataSet.columnDefinitions[i].name] = i;
 				}
 			}
 		}
 		else {
-			this.tables[0] = new Table(this.nativeElement.appendChild(newGridContainer));
+			this.table = new Table(this.nativeElement.appendChild(newGridContainer));
 		}
 	}
 
@@ -915,39 +911,18 @@ export class EditDataGridPanel extends GridParentComponent {
 		return this.columnNameToIndex[name];
 	}
 
-	private getFormatter = (column: any): any => {
-		return (row, cell, value, columnDef, dataContext) => {
-			let columnId = cell > 0 && this.dataSet.columnDefinitions.length > cell - 1 ? this.dataSet.columnDefinitions[cell - 1].id : undefined;
-			if (columnId) {
-				let overrideValue = this.overrideCellFn && this.overrideCellFn(row, columnId, value, dataContext);
-				let valueToDisplay = (value + '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-				let cellClasses = 'grid-cell-value-container';
-				/* tslint:disable:no-null-keyword */
-				let valueMissing = value === undefined || value === null;
-				/* tslint:disable:no-null-keyword */
-				let isOverridden = (overrideValue !== undefined && overrideValue !== null) || (overrideValue !== 'NULL' && row !== this.tables[0].grid.getDataLength() - 1);
-				console.log(isOverridden);
-				if (valueMissing && !isOverridden) {
-					cellClasses += ' missing-value';
-				}
-				return '<span title="' + valueToDisplay + '" class="' + cellClasses + '">' + valueToDisplay + '</span>';
-			}
-			return undefined;
-		};
-	}
-
 	handleChanges(changes: { [propName: string]: any }): void {
 		let columnDefinitionChanges = changes['columnDefinitions'];
-		let activeCell = this.tables[0] ? this.tables[0].grid.getActiveCell() : undefined;
+		let activeCell = this.table ? this.table.grid.getActiveCell() : undefined;
 		let hasGridStructureChanges = false;
-		let wasEditing = this.tables[0] ? !!this.tables[0].grid.getCellEditor() : false;
+		let wasEditing = this.table ? !!this.table.grid.getCellEditor() : false;
 
 		if (columnDefinitionChanges && !equals(columnDefinitionChanges.previousValue, columnDefinitionChanges.currentValue)) {
-			if (!this.tables[0]) {
+			if (!this.table) {
 				this.createNewTable();
 			} else {
-				this.tables[0].grid.resetActiveCell();
-				this.tables[0].grid.setColumns(this.dataSet.columnDefinitions);
+				this.table.grid.resetActiveCell();
+				this.table.grid.setColumns(this.dataSet.columnDefinitions);
 			}
 			hasGridStructureChanges = true;
 
@@ -968,62 +943,43 @@ export class EditDataGridPanel extends GridParentComponent {
 			|| (changes['blurredColumns'] && !equals(changes['blurredColumns'].currentValue, changes['blurredColumns'].previousValue))
 			|| (changes['columnsLoading'] && !equals(changes['columnsLoading'].currentValue, changes['columnsLoading'].previousValue))) {
 			this.setCallbackOnDataRowsChanged();
-			this.tables[0].grid.updateRowCount();
-			this.tables[0].grid.setColumns(this.tables[0].grid.getColumns());
-			this.tables[0].grid.invalidateAllRows();
-			this.tables[0].grid.render();
+			this.table.rerenderGrid(0, this.dataSet.dataRows.getLength());
 			hasGridStructureChanges = true;
 		}
 
 		if (hasGridStructureChanges) {
 			if (activeCell) {
-				this.tables[0].grid.setActiveCell(activeCell.row, activeCell.cell);
+				this.table.grid.setActiveCell(activeCell.row, activeCell.cell);
 			} else {
-				this.tables[0].grid.resetActiveCell();
+				this.table.grid.resetActiveCell();
 			}
 		}
 
 		if (wasEditing && hasGridStructureChanges) {
-			this.tables[0].grid.editActiveCell(this.tables[0].grid.getCellEditor());
+			this.table.grid.editActiveCell(this.table.grid.getCellEditor());
 		}
 	}
 
 	private setCallbackOnDataRowsChanged(): void {
+		//check if dataRows exist before we enable editing or slickgrid will complain
 		if (this.dataSet.dataRows) {
-			// We must wait until we get the first set of dataRows before we enable editing or slickgrid will complain
-
-			//line here may be redundant.
-			if (this.enableEditing) {
-				this.enterEditSession();
-			}
-
+			this.changeEditSession(true);
 			this.dataSet.dataRows.setCollectionChangedCallback((startIndex: number, count: number) => {
 				this.renderGridDataRowsRange(startIndex, count);
 			});
 		}
 	}
 
-	// Enables editing on the grid
-	public enterEditSession(): void {
-		this.changeEditSession(true);
-	}
-
-	// Disables editing on the grid
-	public endEditSession(): void {
-		this.changeEditSession(false);
-	}
-
 	private changeEditSession(enabled: boolean): void {
 		this.enableEditing = enabled;
-		let options: any = this.tables[0].grid.getOptions();
+		let options: any = this.table.grid.getOptions();
 		options.editable = enabled;
-		options.enableAddRow = false; // TODO change to " options.enableAddRow = false;" when we support enableAddRow
-		this.tables[0].grid.setOptions(options);
+		options.enableAddRow = false;
+		this.table.grid.setOptions(options);
 	}
 
-
 	private renderGridDataRowsRange(startIndex: number, count: number): void {
-		let editor = <any>this.tables[0].grid.getCellEditor();
+		let editor = <Slick.Editors.Text<any>>this.table.grid.getCellEditor();
 		let oldValue = editor ? editor.getValue() : undefined;
 		let wasValueChanged = editor ? editor.isValueChanged() : false;
 		this.invalidateRange(startIndex, startIndex + count);
@@ -1037,33 +993,33 @@ export class EditDataGridPanel extends GridParentComponent {
 
 	private invalidateRange(start: number, end: number): void {
 		let refreshedRows = Array.from({ length: (end - start) }, (v, k) => k + start);
-		this.tables[0].grid.invalidateRows(refreshedRows, true);
-		this.tables[0].grid.render();
+		this.table.grid.invalidateRows(refreshedRows, true);
+		this.table.grid.render();
 	}
 
 	private setupEvents(): void {
-		this.tables[0].grid.onScroll.subscribe((e, args) => {
+		this.table.grid.onScroll.subscribe((e, args) => {
 			this.onScroll(args);
 		});
-		this.tables[0].grid.onCellChange.subscribe((e, args) => {
+		this.table.grid.onCellChange.subscribe((e, args) => {
 			this.onCellEditEnd(args);
 		});
-		this.tables[0].grid.onBeforeEditCell.subscribe((e, args) => {
+		this.table.grid.onBeforeEditCell.subscribe((e, args) => {
 			this.onBeforeEditCell(args);
 		});
 		// Subscribe to all active cell changes to be able to catch when we tab to the header on the next row
-		this.tables[0].grid.onActiveCellChanged.subscribe((e, args) => {
+		this.table.grid.onActiveCellChanged.subscribe((e, args) => {
 			// Emit that we've changed active cells
 			this.onActiveCellChanged(args);
 		});
-		this.tables[0].grid.onContextMenu.subscribe((e, args) => {
+		this.table.grid.onContextMenu.subscribe((e, args) => {
 			this.openContextMenu(e, this.dataSet.batchId, this.dataSet.resultId, 0);
 		});
-		this.tables[0].grid.onBeforeAppendCell.subscribe((e, args) => {
+		this.table.grid.onBeforeAppendCell.subscribe((e, args) => {
 			// Since we need to return a string here, we are using calling a function instead of event emitter like other events handlers
 			return this.onBeforeAppendCell ? this.onBeforeAppendCell(args.row, args.cell) : undefined;
 		});
-		this.tables[0].grid.onRendered.subscribe((e, args) => {
+		this.table.grid.onRendered.subscribe((e, args) => {
 			this.onGridRendered(args);
 		});
 	}
@@ -1078,7 +1034,7 @@ export class EditDataGridPanel extends GridParentComponent {
 		// so, grid must be there already
 
 		if (this.dataSet.dataRows && this.dataSet.dataRows.getLength() > 0) {
-			this.tables[0].grid.scrollRowToTop(0);
+			this.table.grid.scrollRowToTop(0);
 		}
 
 		if (this.dataSet.resized) {
@@ -1093,10 +1049,34 @@ export class EditDataGridPanel extends GridParentComponent {
 	}
 
 	private onResize(): void {
-		if (this.tables[0].grid !== undefined) {
+		if (this.table.grid !== undefined) {
 			// this will make sure the grid header and body to be re-rendered
-			this.tables[0].grid.resizeCanvas();
+			this.table.grid.resizeCanvas();
 		}
 	}
 
+	/*Formatter for Column*/
+	private getColumnFormatter(row: number | undefined, cell: any | undefined, value: any, columnDef: any | undefined, dataContext: any | undefined): string {
+		let valueToDisplay = '';
+		let cellClasses = 'grid-cell-value-container';
+		/* tslint:disable:no-null-keyword */
+		let valueMissing = value === undefined || value === null || (Services.DBCellValue.isDBCellValue(value) && value.isNull);
+		if (valueMissing) {
+			valueToDisplay = 'NULL';
+			cellClasses += ' missing-value';
+		}
+		else if (Services.DBCellValue.isDBCellValue(value)) {
+			valueToDisplay = (value.displayValue + '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+			valueToDisplay = escape(valueToDisplay.length > 250 ? valueToDisplay.slice(0, 250) + '...' : valueToDisplay);
+		}
+		else if (typeof value === 'string' || (value && value.text)) {
+			if (value.text) {
+				valueToDisplay = value.text;
+			} else {
+				valueToDisplay = value;
+			}
+			valueToDisplay = escape(valueToDisplay.length > 250 ? valueToDisplay.slice(0, 250) + '...' : valueToDisplay);
+		}
+		return '<span title="' + valueToDisplay + '" class="' + cellClasses + '">' + valueToDisplay + '</span>';
+	}
 }
