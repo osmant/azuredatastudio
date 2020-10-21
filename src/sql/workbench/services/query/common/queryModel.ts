@@ -3,14 +3,12 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import QueryRunner, { IQueryMessage } from 'sql/workbench/services/query/common/queryRunner';
-import { DataService } from 'sql/workbench/contrib/grid/common/dataService';
+import QueryRunner from 'sql/workbench/services/query/common/queryRunner';
+import { IQueryMessage, ResultSetSubset } from 'sql/workbench/services/query/common/query';
+import { DataService } from 'sql/workbench/services/query/common/dataService';
 import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
 import { Event } from 'vs/base/common/event';
-import { QueryEditorInput } from 'sql/workbench/contrib/query/common/queryEditorInput';
 import {
-	ISelectionData,
-	ResultSetSubset,
 	EditUpdateCellResult,
 	EditSessionReadyParams,
 	EditSubsetResult,
@@ -20,6 +18,7 @@ import {
 	queryeditor
 } from 'azdata';
 import { QueryInfo } from 'sql/workbench/services/query/common/queryModelService';
+import { IRange } from 'vs/editor/common/core/range';
 
 export const SERVICE_ID = 'queryModelService';
 
@@ -32,7 +31,7 @@ export interface IQueryPlanInfo {
 }
 
 export interface IQueryInfo {
-	selection: ISelectionData[];
+	range: IRange[];
 	messages: IQueryMessage[];
 }
 
@@ -52,9 +51,9 @@ export interface IQueryModelService {
 	getQueryRunner(uri: string): QueryRunner | undefined;
 
 	getQueryRows(uri: string, rowStart: number, numberOfRows: number, batchId: number, resultId: number): Promise<ResultSetSubset | undefined>;
-	runQuery(uri: string, selection: ISelectionData | undefined, queryInput: QueryEditorInput, runOptions?: ExecutionPlanOptions): void;
-	runQueryStatement(uri: string, selection: ISelectionData | undefined, queryInput: QueryEditorInput): void;
-	runQueryString(uri: string, selection: string | undefined, queryInput: QueryEditorInput): void;
+	runQuery(uri: string, range: IRange | undefined, runOptions?: ExecutionPlanOptions): void;
+	runQueryStatement(uri: string, range: IRange | undefined): void;
+	runQueryString(uri: string, selection: string | undefined): void;
 	cancelQuery(input: QueryRunner | string): void;
 	disposeQuery(uri: string): void;
 	isRunningQuery(uri: string): boolean;
@@ -74,7 +73,7 @@ export interface IQueryModelService {
 	onQueryEvent: Event<IQueryEvent>;
 
 	// Edit Data Functions
-	initializeEdit(ownerUri: string, schemaName: string, objectName: string, objectType: string, rowLimit: number, queryString: string): void;
+	initializeEdit(ownerUri: string, schemaName: string, objectName: string, objectType: string, rowLimit?: number, queryString?: string): void;
 	disposeEdit(ownerUri: string): Promise<void>;
 	updateCell(ownerUri: string, rowId: number, columnId: number, newValue: string): Promise<EditUpdateCellResult | undefined>;
 	commitEdit(ownerUri: string): Promise<void>;

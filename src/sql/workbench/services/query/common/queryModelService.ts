@@ -3,10 +3,10 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import * as GridContentEvents from 'sql/workbench/contrib/grid/common/gridContentEvents';
-import * as LocalizedConstants from 'sql/workbench/contrib/query/common/localizedConstants';
+import * as GridContentEvents from 'sql/workbench/services/query/common/gridContentEvents';
 import QueryRunner from 'sql/workbench/services/query/common/queryRunner';
-import { DataService } from 'sql/workbench/contrib/grid/common/dataService';
+import { ResultSetSubset } from 'sql/workbench/services/query/common/query';
+import { DataService } from 'sql/workbench/services/query/common/dataService';
 import { IQueryModelService, IQueryEvent } from 'sql/workbench/services/query/common/queryModel';
 
 import * as azdata from 'azdata';
@@ -18,7 +18,8 @@ import * as strings from 'vs/base/common/strings';
 import * as types from 'vs/base/common/types';
 import { INotificationService } from 'vs/platform/notification/common/notification';
 import Severity from 'vs/base/common/severity';
-import { QueryEditorInput } from 'sql/workbench/contrib/query/common/queryEditorInput';
+import EditQueryRunner from 'sql/workbench/services/editData/common/editQueryRunner';
+import { IRange } from 'vs/editor/common/core/range';
 
 const selectionSnippetMaxLen = 100;
 
@@ -31,21 +32,20 @@ export interface QueryEvent {
  * Holds information about the state of a query runner
  */
 export class QueryInfo {
-	public queryRunner: QueryRunner;
-	public dataService: DataService;
-	public queryEventQueue: QueryEvent[];
-	public selection: Array<azdata.ISelectionData>;
-	public queryInput: QueryEditorInput;
+	public queryRunner?: EditQueryRunner;
+	public dataService?: DataService;
+	public queryEventQueue?: QueryEvent[];
+	public range?: Array<IRange>;
 	public selectionSnippet?: string;
 
 	// Notes if the angular components have obtained the DataService. If not, all messages sent
 	// via the data service will be lost.
-	public dataServiceReady: boolean;
+	public dataServiceReady?: boolean;
 
 	constructor() {
 		this.dataServiceReady = false;
 		this.queryEventQueue = [];
-		this.selection = [];
+		this.range = [];
 	}
 }
 
@@ -131,10 +131,10 @@ export class QueryModelService implements IQueryModelService {
 	/**
 	 * Get more data rows from the current resultSets from the service layer
 	 */
-	public getQueryRows(uri: string, rowStart: number, numberOfRows: number, batchId: number, resultId: number): Promise<azdata.ResultSetSubset | undefined> {
+	public getQueryRows(uri: string, rowStart: number, numberOfRows: number, batchId: number, resultId: number): Promise<ResultSetSubset | undefined> {
 		if (this._queryInfoMap.has(uri)) {
-			return this._getQueryInfo(uri)!.queryRunner.getQueryRows(rowStart, numberOfRows, batchId, resultId).then(results => {
-				return results.resultSubset;
+			return this._getQueryInfo(uri)!.queryRunner!.getQueryRows(rowStart, numberOfRows, batchId, resultId).then(results => {
+				return results;
 			});
 		} else {
 			return Promise.resolve(undefined);
@@ -143,7 +143,7 @@ export class QueryModelService implements IQueryModelService {
 
 	public getEditRows(uri: string, rowStart: number, numberOfRows: number): Promise<azdata.EditSubsetResult | undefined> {
 		if (this._queryInfoMap.has(uri)) {
-			return this._queryInfoMap.get(uri)!.queryRunner.getEditRows(rowStart, numberOfRows).then(results => {
+			return this._queryInfoMap.get(uri)!.queryRunner!.getEditRows(rowStart, numberOfRows).then(results => {
 				return results;
 			});
 		} else {
@@ -153,7 +153,7 @@ export class QueryModelService implements IQueryModelService {
 
 	public async copyResults(uri: string, selection: Slick.Range[], batchId: number, resultId: number, includeHeaders?: boolean): Promise<void> {
 		if (this._queryInfoMap.has(uri)) {
-			return this._queryInfoMap.get(uri)!.queryRunner.copyResults(selection, batchId, resultId, includeHeaders);
+			return this._queryInfoMap.get(uri)!.queryRunner!.copyResults(selection, batchId, resultId, includeHeaders);
 		}
 	}
 
@@ -167,34 +167,34 @@ export class QueryModelService implements IQueryModelService {
 	public isRunningQuery(uri: string): boolean {
 		return !this._queryInfoMap.has(uri)
 			? false
-			: this._getQueryInfo(uri)!.queryRunner.isExecuting;
+			: this._getQueryInfo(uri)!.queryRunner!.isExecuting;
 	}
 
 	/**
 	 * Run a query for the given URI with the given text selection
 	 */
-	public async runQuery(uri: string, selection: azdata.ISelectionData, queryInput: QueryEditorInput, runOptions?: azdata.ExecutionPlanOptions): Promise<void> {
-		return this.doRunQuery(uri, selection, queryInput, false, runOptions);
+	public async runQuery(uri: string, range: IRange, runOptions?: azdata.ExecutionPlanOptions): Promise<void> {
+		return this.doRunQuery(uri, range, false, runOptions);
 	}
 
 	/**
 	 * Run the current SQL statement for the given URI
 	 */
-	public async runQueryStatement(uri: string, selection: azdata.ISelectionData, queryInput: QueryEditorInput): Promise<void> {
-		return this.doRunQuery(uri, selection, queryInput, true);
+	public async runQueryStatement(uri: string, range: IRange): Promise<void> {
+		return this.doRunQuery(uri, range, true);
 	}
 
 	/**
 	 * Run the current SQL statement for the given URI
 	 */
-	public async runQueryString(uri: string, selection: string, queryInput: QueryEditorInput): Promise<void> {
-		return this.doRunQuery(uri, selection, queryInput, true);
+	public async runQueryString(uri: string, selection: string): Promise<void> {
+		return this.doRunQuery(uri, selection, true);
 	}
 
 	/**
 	 * Run Query implementation
 	 */
-	private async doRunQuery(uri: string, selection: azdata.ISelectionData | string, queryInput: QueryEditorInput,
+	private async doRunQuery(uri: string, range: IRange | string,
 		runCurrentStatement: boolean, runOptions?: azdata.ExecutionPlanOptions): Promise<void> {
 		// Reuse existing query runner if it exists
 		let queryRunner: QueryRunner | undefined;
@@ -202,7 +202,7 @@ export class QueryModelService implements IQueryModelService {
 
 		if (this._queryInfoMap.has(uri)) {
 			info = this._getQueryInfo(uri)!;
-			let existingRunner: QueryRunner = info.queryRunner;
+			let existingRunner: QueryRunner = info.queryRunner!;
 
 			// If the query is already in progress, don't attempt to send it
 			if (existingRunner.isExecuting) {
@@ -210,50 +210,48 @@ export class QueryModelService implements IQueryModelService {
 			}
 
 			// If the query is not in progress, we can reuse the query runner
-			queryRunner = existingRunner;
-			info.selection = [];
+			queryRunner = existingRunner!;
+			info.range = [];
 			info.selectionSnippet = undefined;
 		} else {
 			// We do not have a query runner for this editor, so create a new one
 			// and map it to the results uri
 			info = this.initQueryRunner(uri);
-			queryRunner = info.queryRunner;
+			queryRunner = info.queryRunner!;
 		}
 
-		info.queryInput = queryInput;
-
-		if (types.isString(selection)) {
+		if (types.isString(range)) {
 			// Run the query string in this case
-			if (selection.length < selectionSnippetMaxLen) {
-				info.selectionSnippet = selection;
+			if (range.length < selectionSnippetMaxLen) {
+				info.selectionSnippet = range;
 			} else {
-				info.selectionSnippet = selection.substring(0, selectionSnippetMaxLen - 3) + '...';
+				info.selectionSnippet = range.substring(0, selectionSnippetMaxLen - 3) + '...';
 			}
-			return queryRunner.runQuery(selection, runOptions);
+			return queryRunner.runQuery(range, runOptions);
 		} else if (runCurrentStatement) {
-			return queryRunner.runQueryStatement(selection);
+			return queryRunner.runQueryStatement(range);
 		} else {
-			return queryRunner.runQuery(selection, runOptions);
+			return queryRunner.runQuery(range, runOptions);
 		}
 	}
 
 	private initQueryRunner(uri: string): QueryInfo {
-		let queryRunner = this._instantiationService.createInstance(QueryRunner, uri);
+		let queryRunner = this._instantiationService.createInstance(EditQueryRunner, uri);
 		let info = new QueryInfo();
 		queryRunner.onResultSet(e => {
 			this._fireQueryEvent(uri, 'resultSet', e);
 		});
 		queryRunner.onBatchStart(b => {
 			let link = undefined;
-			let messageText = LocalizedConstants.runQueryBatchStartMessage;
-			if (b.selection) {
+			let messageText = nls.localize('runQueryBatchStartMessage', "Started executing query at ");
+			if (b.range) {
 				if (info.selectionSnippet) {
 					// This indicates it's a query string. Do not include line information since it'll be inaccurate, but show some of the
 					// executed query text
 					messageText = nls.localize('runQueryStringBatchStartMessage', "Started executing query \"{0}\"", info.selectionSnippet);
 				} else {
 					link = {
-						text: strings.format(LocalizedConstants.runQueryBatchStartLine, b.selection.startLine + 1)
+						text: strings.format(nls.localize('runQueryBatchStartLine', "Line {0}"), b.range.startLineNumber)
 					};
 				}
 			}
@@ -265,7 +263,7 @@ export class QueryModelService implements IQueryModelService {
 				link: link
 			};
 			this._fireQueryEvent(uri, 'message', message);
-			info.selection.push(this._validateSelection(b.selection));
+			info.range!.push(b.range);
 		});
 		queryRunner.onMessage(m => {
 			this._fireQueryEvent(uri, 'message', m);
@@ -279,8 +277,8 @@ export class QueryModelService implements IQueryModelService {
 				uri: uri,
 				queryInfo:
 				{
-					selection: info.selection,
-					messages: info.queryRunner.messages
+					range: info.range!,
+					messages: info.queryRunner!.messages
 				}
 			};
 			this._onQueryEvent.fire(event);
@@ -297,8 +295,8 @@ export class QueryModelService implements IQueryModelService {
 				uri: uri,
 				queryInfo:
 				{
-					selection: info.selection,
-					messages: info.queryRunner.messages
+					range: info.range!,
+					messages: info.queryRunner!.messages
 				}
 			};
 			this._onQueryEvent.fire(event);
@@ -313,8 +311,8 @@ export class QueryModelService implements IQueryModelService {
 				uri: uri,
 				queryInfo:
 				{
-					selection: info.selection,
-					messages: info.queryRunner.messages
+					range: info.range!,
+					messages: info.queryRunner!.messages
 				}
 			};
 			this._onQueryEvent.fire(event);
@@ -329,8 +327,8 @@ export class QueryModelService implements IQueryModelService {
 				uri: planInfo.fileUri,
 				queryInfo:
 				{
-					selection: info.selection,
-					messages: info.queryRunner.messages
+					range: info.range!,
+					messages: info.queryRunner!.messages
 				},
 				params: planInfo
 			};
@@ -343,8 +341,8 @@ export class QueryModelService implements IQueryModelService {
 				uri: uri,
 				queryInfo:
 				{
-					selection: info.selection,
-					messages: info.queryRunner.messages
+					range: info.range!,
+					messages: info.queryRunner!.messages
 				},
 				params: resultSetInfo
 			};
@@ -382,7 +380,7 @@ export class QueryModelService implements IQueryModelService {
 			// can be correct
 			this._notificationService.notify({
 				severity: Severity.Error,
-				message: strings.format(LocalizedConstants.msgCancelQueryFailed, error)
+				message: strings.format(nls.localize('msgCancelQueryFailed', "Canceling the query failed: {0}"), error)
 			});
 			this._fireQueryEvent(queryRunner!.uri, 'complete', 0);
 		});
@@ -404,12 +402,12 @@ export class QueryModelService implements IQueryModelService {
 	// EDIT DATA METHODS /////////////////////////////////////////////////////
 	async initializeEdit(ownerUri: string, schemaName: string, objectName: string, objectType: string, rowLimit: number, queryString: string): Promise<void> {
 		// Reuse existing query runner if it exists
-		let queryRunner: QueryRunner;
+		let queryRunner: EditQueryRunner;
 		let info: QueryInfo;
 
 		if (this._queryInfoMap.has(ownerUri)) {
 			info = this._getQueryInfo(ownerUri)!;
-			let existingRunner: QueryRunner = info.queryRunner;
+			let existingRunner = info.queryRunner!;
 
 			// If the initialization is already in progress
 			if (existingRunner.isExecuting) {
@@ -422,7 +420,7 @@ export class QueryModelService implements IQueryModelService {
 
 			// We do not have a query runner for this editor, so create a new one
 			// and map it to the results uri
-			queryRunner = this._instantiationService.createInstance(QueryRunner, ownerUri);
+			queryRunner = this._instantiationService.createInstance(EditQueryRunner, ownerUri);
 			const resultSetEventType = 'resultSet';
 			queryRunner.onResultSet(resultSet => {
 				this._fireQueryEvent(ownerUri, resultSetEventType, resultSet);
@@ -432,15 +430,15 @@ export class QueryModelService implements IQueryModelService {
 			});
 			queryRunner.onBatchStart(batch => {
 				let link = undefined;
-				let messageText = LocalizedConstants.runQueryBatchStartMessage;
-				if (batch.selection) {
+				let messageText = nls.localize('runQueryBatchStartMessage', "Started executing query at ");
+				if (batch.range) {
 					if (info.selectionSnippet) {
 						// This indicates it's a query string. Do not include line information since it'll be inaccurate, but show some of the
 						// executed query text
 						messageText = nls.localize('runQueryStringBatchStartMessage', "Started executing query \"{0}\"", info.selectionSnippet);
 					} else {
 						link = {
-							text: strings.format(LocalizedConstants.runQueryBatchStartLine, batch.selection.startLine + 1)
+							text: strings.format(nls.localize('runQueryBatchStartLine', "Line {0}"), batch.range.startLineNumber)
 						};
 					}
 				}
@@ -464,8 +462,8 @@ export class QueryModelService implements IQueryModelService {
 					uri: ownerUri,
 					queryInfo:
 					{
-						selection: info.selection,
-						messages: info.queryRunner.messages
+						range: info.range!,
+						messages: info.queryRunner!.messages
 					},
 				};
 				this._onQueryEvent.fire(event);
@@ -481,8 +479,8 @@ export class QueryModelService implements IQueryModelService {
 					uri: ownerUri,
 					queryInfo:
 					{
-						selection: info.selection,
-						messages: info.queryRunner.messages
+						range: info.range!,
+						messages: info.queryRunner!.messages
 					},
 				};
 				this._onQueryEvent.fire(event);
@@ -601,13 +599,13 @@ export class QueryModelService implements IQueryModelService {
 
 	// PRIVATE METHODS //////////////////////////////////////////////////////
 
-	private internalGetQueryRunner(ownerUri: string): QueryRunner | undefined {
-		let queryRunner: QueryRunner | undefined;
+	private internalGetQueryRunner(ownerUri: string): EditQueryRunner | undefined {
+		let queryRunner: EditQueryRunner | undefined;
 		if (this._queryInfoMap.has(ownerUri)) {
-			let existingRunner = this._getQueryInfo(ownerUri)!.queryRunner;
+			let existingRunner = this._getQueryInfo(ownerUri)!.queryRunner!;
 			// If the query is not already executing then set it up
 			if (!existingRunner.isExecuting) {
-				queryRunner = this._getQueryInfo(ownerUri)!.queryRunner;
+				queryRunner = this._getQueryInfo(ownerUri)!.queryRunner!;
 			}
 		}
 		// return undefined if not found or is already executing
@@ -622,7 +620,7 @@ export class QueryModelService implements IQueryModelService {
 			if (service) {
 				// There is no need to queue up these events like there is for the query events because
 				// if the DataService is not yet ready there will be no grid content to update
-				service.gridContentObserver.next(type);
+				service.fireGridContent(type);
 			}
 		}
 	}
@@ -632,38 +630,25 @@ export class QueryModelService implements IQueryModelService {
 
 		if (info && info.dataServiceReady) {
 			let service: DataService = this.getDataService(uri);
-			service.queryEventObserver.next({
+			service.fireQueryEvent({
 				type: type,
 				data: data
 			});
 		} else if (info) {
 			let queueItem: QueryEvent = { type: type, data: data };
-			info.queryEventQueue.push(queueItem);
+			info.queryEventQueue!.push(queueItem);
 		}
 	}
 
 	private _sendQueuedEvents(uri: string): void {
 		let info = this._getQueryInfo(uri);
-		while (info && info.queryEventQueue.length > 0) {
-			let event = info.queryEventQueue.shift()!;
+		while (info && info.queryEventQueue!.length > 0) {
+			let event = info.queryEventQueue!.shift()!;
 			this._fireQueryEvent(uri, event.type, event.data);
 		}
 	}
 
 	public _getQueryInfo(uri: string): QueryInfo | undefined {
 		return this._queryInfoMap.get(uri);
-	}
-
-	// TODO remove this funciton and its usages when #821 in vscode-mssql is fixed and
-	// the SqlToolsService version is updated in this repo - coquagli 4/19/2017
-	private _validateSelection(selection: azdata.ISelectionData): azdata.ISelectionData {
-		if (!selection) {
-			selection = <azdata.ISelectionData>{};
-		}
-		selection.endColumn = selection ? Math.max(0, selection.endColumn) : 0;
-		selection.endLine = selection ? Math.max(0, selection.endLine) : 0;
-		selection.startColumn = selection ? Math.max(0, selection.startColumn) : 0;
-		selection.startLine = selection ? Math.max(0, selection.startLine) : 0;
-		return selection;
 	}
 }

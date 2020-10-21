@@ -9,9 +9,9 @@ import * as assert from 'assert';
 import { URI } from 'vs/base/common/uri';
 import * as tempWrite from 'temp-write';
 import { LocalContentManager } from 'sql/workbench/services/notebook/common/localContentManager';
-import { CellTypes } from 'sql/workbench/contrib/notebook/common/models/contracts';
+import { CellTypes } from 'sql/workbench/services/notebook/common/contracts';
 import { TestInstantiationService } from 'vs/platform/instantiation/test/common/instantiationServiceMock';
-import { TestFileService } from 'vs/workbench/test/workbenchTestServices';
+import { TestFileService } from 'vs/workbench/test/browser/workbenchTestServices';
 import { IFileService, IReadFileOptions, IFileContent, IWriteFileOptions, IFileStatWithMetadata } from 'vs/platform/files/common/files';
 import * as pfs from 'vs/base/node/pfs';
 import { VSBuffer, VSBufferReadable } from 'vs/base/common/buffer';
@@ -130,5 +130,13 @@ suite('Local Content Manager', function (): void {
 		// then I expect output to have been normalized into a single string
 		let displayOutput = <nb.IDisplayData>notebook.cells[0].outputs[0];
 		assert.equal(displayOutput.data['text/html'], '<div></div>');
+	});
+	test('Should create a new empty notebook if content is undefined', async function (): Promise<void> {
+		// verify that when loading content from an empty string or undefined, a new notebook is created.
+		let content = await contentManager.loadFromContentString('');
+		assert.equal(content.cells.length, 0);
+
+		content = await contentManager.loadFromContentString(undefined);
+		assert.equal(content.cells.length, 0);
 	});
 });

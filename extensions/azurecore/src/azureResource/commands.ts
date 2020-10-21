@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 
-import { window, QuickPickItem } from 'vscode';
+import { window, QuickPickItem, env, Uri } from 'vscode';
 import * as azdata from 'azdata';
 import { TokenCredentials } from '@azure/ms-rest-js';
 import * as nls from 'vscode-nls';
@@ -16,46 +16,64 @@ import { TreeNode } from './treeNode';
 import { AzureResourceCredentialError } from './errors';
 import { AzureResourceTreeProvider } from './tree/treeProvider';
 import { AzureResourceAccountTreeNode } from './tree/accountTreeNode';
-import { IAzureResourceSubscriptionService, IAzureResourceSubscriptionFilterService } from '../azureResource/interfaces';
+import { IAzureResourceSubscriptionService, IAzureResourceSubscriptionFilterService, IAzureTerminalService } from '../azureResource/interfaces';
 import { AzureResourceServiceNames } from './constants';
-import { AzureResourceGroupService } from './providers/resourceGroup/resourceGroupService';
+import { AzureAccount, Tenant } from '../account-provider/interfaces';
 
 export function registerAzureResourceCommands(appContext: AppContext, tree: AzureResourceTreeProvider): void {
+	appContext.apiWrapper.registerCommand('azure.resource.startterminal', async (node?: TreeNode) => {
+		try {
+			const enablePreviewFeatures = appContext.apiWrapper.getConfiguration('workbench').get('enablePreviewFeatures');
+			if (!enablePreviewFeatures) {
+				const msg = localize('azure.cloudTerminalPreview', "You must enable preview features in order to use Azure Cloud Shell.");
+				appContext.apiWrapper.showInformationMessage(msg);
+				return;
+			}
+			if (!node || !(node instanceof AzureResourceAccountTreeNode)) {
+				return;
+			}
 
-	// Resource Management commands
-	appContext.apiWrapper.registerCommand('azure.accounts.getSubscriptions', async (account?: azdata.Account): Promise<azureResource.AzureResourceSubscription[]> => {
-		if (!account) {
-			return [];
-		}
-		const subscriptions = <azureResource.AzureResourceSubscription[]>[];
-		const subscriptionService = appContext.getService<IAzureResourceSubscriptionService>(AzureResourceServiceNames.subscriptionService);
-		const tokens = await appContext.apiWrapper.getSecurityToken(account, azdata.AzureResource.ResourceManagement);
-		for (const tenant of account.properties.tenants) {
-			const token = tokens[tenant.id].token;
-			const tokenType = tokens[tenant.id].tokenType;
+			const accountNode = node as AzureResourceAccountTreeNode;
+			const azureAccount = accountNode.account as AzureAccount;
 
-			subscriptions.push(...await subscriptionService.getSubscriptions(account, new TokenCredentials(token, tokenType)));
-		}
-		return subscriptions;
-	});
+			const tokens = await appContext.apiWrapper.getSecurityToken(azureAccount, azdata.AzureResource.MicrosoftResourceManagement);
 
-	appContext.apiWrapper.registerCommand('azure.accounts.getResourceGroups', async (account?: azdata.Account, subscription?: azureResource.AzureResourceSubscription): Promise<azureResource.AzureResourceResourceGroup[]> => {
-		if (!account || !subscription) {
-			return [];
-		}
-		const service = new AzureResourceGroupService();
-		const resourceGroups: azureResource.AzureResourceResourceGroup[] = [];
-		for (const tenant of account.properties.tenants) {
-			const tokens = await appContext.apiWrapper.getSecurityToken(account, azdata.AzureResource.ResourceManagement);
-			const token = tokens[tenant.id].token;
-			const tokenType = tokens[tenant.id].tokenType;
+			const terminalService = appContext.getService<IAzureTerminalService>(AzureResourceServiceNames.terminalService);
 
-			resourceGroups.push(...await service.getResources(subscription, new TokenCredentials(token, tokenType)));
+			const listOfTenants = azureAccount.properties.tenants.map(t => t.displayName);
+
+			if (listOfTenants.length === 0) {
+				window.showErrorMessage(localize('azure.noTenants', "A tenant is required for this feature. Your Azure subscription seems to have no tenants."));
+				return;
+			}
+
+			let tenant: Tenant;
+			window.setStatusBarMessage(localize('azure.startingCloudShell', "Starting cloud shell…"), 5000);
+
+			if (listOfTenants.length === 1) {
+				// Don't show quickpick for a single option
+				tenant = azureAccount.properties.tenants[0];
+			} else {
+				const pickedTenant = await window.showQuickPick(listOfTenants, { canPickMany: false });
+
+				if (!pickedTenant) {
+					window.showErrorMessage(localize('azure.mustPickTenant', "You must select a tenant for this feature to work."));
+					return;
+				}
+
+				// The tenant the user picked
+				tenant = azureAccount.properties.tenants[listOfTenants.indexOf(pickedTenant)];
+			}
+
+			await terminalService.getOrCreateCloudConsole(azureAccount, tenant, tokens);
+		} catch (ex) {
+			console.error(ex);
+			window.showErrorMessage(ex);
 		}
-		return resourceGroups;
 	});
 
 	// Resource Tree commands
+
 	appContext.apiWrapper.registerCommand('azure.resource.selectsubscriptions', async (node?: TreeNode) => {
 		if (!(node instanceof AzureResourceAccountTreeNode)) {
 			return;
@@ -78,6 +96,7 @@ export function registerAzureResourceCommands(appContext: AppContext, tree: Azur
 					subscriptions.push(...await subscriptionService.getSubscriptions(accountNode.account, new TokenCredentials(token, tokenType)));
 				}
 			} catch (error) {
+				this.account.isStale = true;
 				throw new AzureResourceCredentialError(localize('azure.resource.selectsubscriptions.credentialError', "Failed to get credential for account {0}. Please refresh the account.", this.account.key.accountId), error);
 			}
 		}
@@ -141,5 +160,19 @@ export function registerAzureResourceCommands(appContext: AppContext, tree: Azur
 		if (conn) {
 			appContext.apiWrapper.executeCommand('workbench.view.connections');
 		}
+	});
+
+	appContext.apiWrapper.registerCommand('azure.resource.openInAzurePortal', async (connectionProfile: azdata.IConnectionProfile) => {
+
+		if (
+			!connectionProfile.azureResourceId ||
+			!connectionProfile.azurePortalEndpoint ||
+			!connectionProfile.azureTenantId
+		) {
+			return;
+		}
+
+		const urlToOpen = `${connectionProfile.azurePortalEndpoint}//${connectionProfile.azureTenantId}/#resource/${connectionProfile.azureResourceId}`;
+		env.openExternal(Uri.parse(urlToOpen));
 	});
 }

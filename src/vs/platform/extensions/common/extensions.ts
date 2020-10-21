@@ -45,7 +45,7 @@ export interface IGrammar {
 }
 
 export interface IJSONValidation {
-	fileMatch: string;
+	fileMatch: string | string[];
 	url: string;
 }
 
@@ -130,7 +130,7 @@ export interface IExtensionContributions {
 	views?: { [location: string]: IView[] };
 	colors?: IColor[];
 	localizations?: ILocalization[];
-	readonly webviewEditors?: readonly IWebviewEditor[];
+	readonly customEditors?: readonly IWebviewEditor[];
 	readonly codeActions?: readonly ICodeActionContribution[];
 }
 
@@ -157,6 +157,7 @@ export interface IExtensionManifest {
 	readonly forceReload?: boolean; // {{ SQL CARBON EDIT }} add field
 	readonly description?: string;
 	readonly main?: string;
+	readonly browser?: string;
 	readonly icon?: string;
 	readonly categories?: string[];
 	readonly keywords?: string[];
@@ -246,8 +247,7 @@ export interface IExtensionDescription extends IExtensionManifest {
 	readonly isUnderDevelopment: boolean;
 	readonly extensionLocation: URI;
 	enableProposedApi?: boolean;
-	// {{ SQL CARBON EDIT }}
-	readonly forceReload?: boolean;
+	readonly forceReload?: boolean; // {{ SQL CARBON EDIT }}
 }
 
 export function isLanguagePackExtension(manifest: IExtensionManifest): boolean {

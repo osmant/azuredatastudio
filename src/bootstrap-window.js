@@ -25,13 +25,12 @@ exports.assign = function assign(destination, source) {
  */
 exports.load = function (modulePaths, resultCallback, options) {
 
-	// @ts-ignore
 	const webFrame = require('electron').webFrame;
 	const path = require('path');
 
 	const args = parseURLQueryArgs();
 	/**
-	 * // configuration: IWindowConfiguration
+	 * // configuration: INativeWindowConfiguration
 	 * @type {{
 	 * zoomLevel?: number,
 	 * extensionDevelopmentPath?: string[],
@@ -49,7 +48,6 @@ exports.load = function (modulePaths, resultCallback, options) {
 	}
 
 	// Error handler
-	// @ts-ignore
 	process.on('uncaughtException', function (error) {
 		onUnexpectedError(error, enableDeveloperTools);
 	});
@@ -111,6 +109,7 @@ exports.load = function (modulePaths, resultCallback, options) {
 		'@angular/platform-browser-dynamic',
 		'@angular/router',
 		'rxjs/Observable',
+		'rxjs/add/observable/fromPromise',
 		'rxjs/Subject',
 		'rxjs/Observer',
 		'slickgrid/lib/jquery.event.drag-2.3.0',
@@ -183,7 +182,6 @@ function parseURLQueryArgs() {
  */
 function registerDeveloperKeybindings(disallowReloadKeybinding) {
 
-	// @ts-ignore
 	const ipc = require('electron').ipcRenderer;
 
 	const extractKey = function (e) {
@@ -222,7 +220,6 @@ function registerDeveloperKeybindings(disallowReloadKeybinding) {
 
 function onUnexpectedError(error, enableDeveloperTools) {
 
-	// @ts-ignore
 	const ipc = require('electron').ipcRenderer;
 
 	if (enableDeveloperTools) {
@@ -231,7 +228,7 @@ function onUnexpectedError(error, enableDeveloperTools) {
 
 	console.error('[uncaught exception]: ' + error);
 
-	if (error.stack) {
+	if (error && error.stack) {
 		console.error(error.stack);
 	}
 }

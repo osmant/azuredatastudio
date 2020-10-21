@@ -19,12 +19,13 @@ import { IModelService } from 'vs/editor/common/services/modelService';
 import { ComponentBase } from 'sql/workbench/browser/modelComponents/componentBase';
 import { QueryTextEditor } from 'sql/workbench/browser/modelComponents/queryTextEditor';
 import { ILogService } from 'vs/platform/log/common/log';
-import { UntitledTextEditorInput } from 'vs/workbench/common/editor/untitledTextEditorInput';
+import { UntitledTextEditorInput } from 'vs/workbench/services/untitled/common/untitledTextEditorInput';
 import { ServiceCollection } from 'vs/platform/instantiation/common/serviceCollection';
 import { IEditorProgressService } from 'vs/platform/progress/common/progress';
 import { SimpleProgressIndicator } from 'sql/workbench/services/progress/browser/simpleProgressIndicator';
-import { IComponent, IComponentDescriptor, IModelStore } from 'sql/platform/dashboard/browser/interfaces';
-import { ComponentEventType } from 'sql/workbench/api/common/sqlExtHostTypes';
+import { IComponent, IComponentDescriptor, IModelStore, ComponentEventType } from 'sql/platform/dashboard/browser/interfaces';
+import { IEditorService } from 'vs/workbench/services/editor/common/editorService';
+import { convertSizeToNumber } from 'sql/base/browser/dom';
 
 @Component({
 	template: '',
@@ -48,7 +49,8 @@ export default class EditorComponent extends ComponentBase implements IComponent
 		@Inject(IInstantiationService) private _instantiationService: IInstantiationService,
 		@Inject(IModelService) private _modelService: IModelService,
 		@Inject(IModeService) private _modeService: IModeService,
-		@Inject(ILogService) private _logService: ILogService
+		@Inject(ILogService) private _logService: ILogService,
+		@Inject(IEditorService) private readonly editorService: IEditorService
 	) {
 		super(changeRef, el);
 	}
@@ -67,7 +69,7 @@ export default class EditorComponent extends ComponentBase implements IComponent
 		this._editor.create(this._el.nativeElement);
 		this._editor.setVisible(true);
 		let uri = this.createUri();
-		this._editorInput = this._instantiationService.createInstance(UntitledTextEditorInput, uri, false, 'plaintext', '', '');
+		this._editorInput = this.editorService.createEditorInput({ forceUntitled: true, resource: uri, mode: 'plaintext' }) as UntitledTextEditorInput;
 		await this._editor.setInput(this._editorInput, undefined);
 		const model = await this._editorInput.resolve();
 		this._editorModel = model.textEditorModel;
@@ -110,9 +112,9 @@ export default class EditorComponent extends ComponentBase implements IComponent
 	/// IComponent implementation
 
 	public layout(): void {
-		let width: number = this.convertSizeToNumber(this.width);
+		let width: number = convertSizeToNumber(this.width);
 
-		let height: number = this.convertSizeToNumber(this.height);
+		let height: number = convertSizeToNumber(this.height);
 		if (this._isAutoResizable) {
 			this._editor.setHeightToScrollHeight();
 			height = Math.max(this._editor.scrollHeight, this._minimumHeight ? this._minimumHeight : 0);

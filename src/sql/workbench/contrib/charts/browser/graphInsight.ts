@@ -9,7 +9,7 @@ import { mixin } from 'sql/base/common/objects';
 import { localize } from 'vs/nls';
 import * as colors from 'vs/platform/theme/common/colorRegistry';
 import { editorLineNumbers } from 'vs/editor/common/view/editorColorRegistry';
-import { IThemeService, ITheme } from 'vs/platform/theme/common/themeService';
+import { IThemeService, IColorTheme } from 'vs/platform/theme/common/themeService';
 
 import { IInsight, IPointDataSet, customMixin } from './interfaces';
 import { IInsightOptions, DataDirection, ChartType, LegendPosition, DataType } from 'sql/workbench/contrib/charts/common/interfaces';
@@ -53,14 +53,14 @@ export class Graph implements IInsight {
 	public static readonly types = [ChartType.Bar, ChartType.Doughnut, ChartType.HorizontalBar, ChartType.Line, ChartType.Pie, ChartType.Scatter, ChartType.TimeSeries];
 	public readonly types = Graph.types;
 
-	private _theme: ITheme;
+	private _theme: IColorTheme;
 
 	constructor(
 		container: HTMLElement, options: IInsightOptions = defaultOptions,
 		@IThemeService themeService: IThemeService
 	) {
-		this._theme = themeService.getTheme();
-		themeService.onThemeChange(e => {
+		this._theme = themeService.getColorTheme();
+		themeService.onDidColorThemeChange(e => {
 			this._theme = e;
 			this.data = this._data;
 		});
@@ -163,8 +163,8 @@ export class Graph implements IInsight {
 			this.chartjs.config.type = this.options.type;
 			// we don't want to include lables for timeSeries
 			this.chartjs.data.labels = this.originalType === 'timeSeries' ? [] : labels;
-			this.chartjs.config.options = this.transformOptions(this.options);
-			this.chartjs.update(0);
+			this.chartjs.options = this.transformOptions(this.options);
+			this.chartjs.update({ duration: 0 });
 		} else {
 			this.chartjs = new chartjs.Chart(this.canvas.getContext('2d'), {
 				data: {

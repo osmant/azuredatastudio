@@ -3,7 +3,7 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { ExtensionNodeType, TreeItem } from 'azdata';
+import { ExtensionNodeType, TreeItem, Account } from 'azdata';
 import { TreeItemCollapsibleState, ExtensionContext } from 'vscode';
 import * as nls from 'vscode-nls';
 const localize = nls.loadMessageBundle();
@@ -17,7 +17,7 @@ import { azureResource } from '../../azure-resource';
 
 export class PostgresServerTreeDataProvider extends ResourceTreeDataProviderBase<azureResource.AzureResourceDatabaseServer> {
 	private static readonly containerId = 'azure.resource.providers.databaseServer.treeDataProvider.postgresServerContainer';
-	private static readonly containerLabel = localize('azure.resource.providers.databaseServer.treeDataProvider.postgresServerContainerLabel', "Azure Database for PostgreSQL Servers");
+	private static readonly containerLabel = localize('azure.resource.providers.databaseServer.treeDataProvider.postgresServerContainerLabel', "Azure Database for PostgreSQL server");
 
 	public constructor(
 		databaseServerService: IAzureResourceService<azureResource.AzureResourceDatabaseServer>,
@@ -28,11 +28,10 @@ export class PostgresServerTreeDataProvider extends ResourceTreeDataProviderBase
 	}
 
 
-	protected getTreeItemForResource(databaseServer: azureResource.AzureResourceDatabaseServer): TreeItem {
+	protected getTreeItemForResource(databaseServer: azureResource.AzureResourceDatabaseServer, account: Account): TreeItem {
 		return {
 			id: `databaseServer_${databaseServer.id ? databaseServer.id : databaseServer.name}`,
 			label: databaseServer.name,
-			// TODO: should get PGSQL-specific icons (also needed in that extension)
 			iconPath: {
 				dark: this._extensionContext.asAbsolutePath('resources/dark/sql_server_inverse.svg'),
 				light: this._extensionContext.asAbsolutePath('resources/light/sql_server.svg')
@@ -55,7 +54,11 @@ export class PostgresServerTreeDataProvider extends ResourceTreeDataProviderBase
 				options: {
 					// Set default for SSL or will get error complaining about it not being set correctly
 					'sslmode': 'require'
-				}
+				},
+				azureAccount: account.key.accountId,
+				azureTenantId: databaseServer.tenant,
+				azureResourceId: databaseServer.id,
+				azurePortalEndpoint: account.properties.providerSettings.settings.portalEndpoint
 			},
 			childProvider: 'PGSQL',
 			type: ExtensionNodeType.Server

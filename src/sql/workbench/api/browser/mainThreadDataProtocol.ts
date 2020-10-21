@@ -26,6 +26,8 @@ import { IFileBrowserService } from 'sql/workbench/services/fileBrowser/common/i
 import { IExtHostContext } from 'vs/workbench/api/common/extHost.protocol';
 import { extHostNamedCustomer } from 'vs/workbench/api/common/extHostCustomers';
 import { assign } from 'vs/base/common/objects';
+import { serializableToMap } from 'sql/base/common/map';
+import { IAssessmentService } from 'sql/workbench/services/assessment/common/interfaces';
 
 /**
  * Main thread class for handling data protocol management registration.
@@ -52,7 +54,8 @@ export class MainThreadDataProtocol extends Disposable implements MainThreadData
 		@ITaskService private _taskService: ITaskService,
 		@IProfilerService private _profilerService: IProfilerService,
 		@ISerializationService private _serializationService: ISerializationService,
-		@IFileBrowserService private _fileBrowserService: IFileBrowserService
+		@IFileBrowserService private _fileBrowserService: IFileBrowserService,
+		@IAssessmentService private _assessmentService: IAssessmentService
 	) {
 		super();
 		if (extHostContext) {
@@ -209,7 +212,7 @@ export class MainThreadDataProtocol extends Disposable implements MainThreadData
 			getMetadata(connectionUri: string): Thenable<azdata.ProviderMetadata> {
 				return self._proxy.$getMetadata(handle, connectionUri);
 			},
-			getDatabases(connectionUri: string): Thenable<string[]> {
+			getDatabases(connectionUri: string): Thenable<string[] | azdata.DatabaseInfo[]> {
 				return self._proxy.$getDatabases(handle, connectionUri);
 			},
 			getTableInfo(connectionUri: string, metadata: azdata.ObjectMetadata): Thenable<azdata.ColumnMetadata[]> {
@@ -446,6 +449,23 @@ export class MainThreadDataProtocol extends Disposable implements MainThreadData
 		return undefined;
 	}
 
+	public $registerSqlAssessmentServicesProvider(providerId: string, handle: number): Promise<any> {
+		const self = this;
+		this._assessmentService.registerProvider(providerId, <azdata.SqlAssessmentServicesProvider>{
+			providerId: providerId,
+			assessmentInvoke(connectionUri: string, targetType: number): Thenable<azdata.SqlAssessmentResult> {
+				return self._proxy.$assessmentInvoke(handle, connectionUri, targetType);
+			},
+			getAssessmentItems(connectionUri: string, targetType: number): Thenable<azdata.SqlAssessmentResult> {
+				return self._proxy.$getAssessmentItems(handle, connectionUri, targetType);
+			},
+			generateAssessmentScript(items: azdata.SqlAssessmentResultItem[]): Thenable<azdata.ResultStatus> {
+				return self._proxy.$generateAssessmentScript(handle, items);
+			}
+		});
+
+		return undefined;
+	}
 	public $registerCapabilitiesServiceProvider(providerId: string, handle: number): Promise<any> {
 		const self = this;
 		this._capabilitiesService.registerProvider(<azdata.CapabilitiesProvider>{
@@ -500,8 +520,8 @@ export class MainThreadDataProtocol extends Disposable implements MainThreadData
 	public $onResultSetUpdated(handle: number, resultSetInfo: azdata.QueryExecuteResultSetNotificationParams): void {
 		this._queryManagementService.onResultSetUpdated(resultSetInfo);
 	}
-	public $onQueryMessage(handle: number, message: azdata.QueryExecuteMessageParams): void {
-		this._queryManagementService.onMessage(message);
+	public $onQueryMessage(messages: [string, azdata.QueryExecuteMessageParams[]][]): void {
+		this._queryManagementService.onMessage(serializableToMap(messages));
 	}
 	public $onEditSessionReady(handle: number, ownerUri: string, success: boolean, message: string): void {
 		this._queryManagementService.onEditSessionReady(ownerUri, success, message);

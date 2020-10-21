@@ -33,6 +33,10 @@ export class AddNewPackageTab {
 
 		this.addNewPkgTab.registerContent(async view => {
 			this.newPackagesSearchBar = view.modelBuilder.inputBox().withProperties({ width: '400px' }).component();
+			// Search package by name when pressing enter
+			this.newPackagesSearchBar.onEnterKeyPressed(async () => {
+				await this.loadNewPackageInfo();
+			});
 
 			this.packagesSearchButton = view.modelBuilder.button()
 				.withProperties<azdata.ButtonProperties>({
@@ -143,7 +147,7 @@ export class AddNewPackageTab {
 
 			let pipPackage: PipPackageOverview;
 			pipPackage = await this.dialog.model.getPackageOverview(packageName);
-			if (!pipPackage.versions || pipPackage.versions.length === 0) {
+			if (!pipPackage?.versions || pipPackage.versions.length === 0) {
 				this.dialog.showErrorMessage(
 					localize('managePackages.noVersionsFound',
 						"Could not find any valid versions for the specified package"));

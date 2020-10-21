@@ -140,8 +140,8 @@ export class ExtensionManagementService extends Disposable implements IExtension
 		return Promise.reject(`Invalid location ${extension.location.toString()}`);
 	}
 
-	unzip(zipLocation: URI, type: ExtensionType): Promise<IExtensionIdentifier> {
-		return Promise.all(this.servers.map(({ extensionManagementService }) => extensionManagementService.unzip(zipLocation, type))).then(([extensionIdentifier]) => extensionIdentifier);
+	unzip(zipLocation: URI): Promise<IExtensionIdentifier> {
+		return Promise.all(this.servers.map(({ extensionManagementService }) => extensionManagementService.unzip(zipLocation))).then(([extensionIdentifier]) => extensionIdentifier);
 	}
 
 	async install(vsix: URI): Promise<ILocalExtension> {
@@ -209,7 +209,7 @@ export class ExtensionManagementService extends Disposable implements IExtension
 				return Promise.reject(localize('Manifest is not found', "Installing Extension {0} failed: Manifest is not found.", gallery.displayName || gallery.name));
 			}
 			if (!isLanguagePackExtension(manifest) && !canExecuteOnWorkspace(manifest, this.productService, this.configurationService)) {
-				const error = new Error(localize('cannot be installed', "Cannot install '{0}' extension since it cannot be enabled in the remote server.", gallery.displayName || gallery.name));
+				const error = new Error(localize('cannot be installed', "Cannot install '{0}' because this extension has defined that it cannot run on the remote server.", gallery.displayName || gallery.name));
 				error.name = INSTALL_ERROR_NOT_SUPPORTED;
 				return Promise.reject(error);
 			}

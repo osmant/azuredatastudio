@@ -3,7 +3,6 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import 'vs/css!sql/media/overwriteVsIcons';
 import { Registry } from 'vs/platform/registry/common/platform';
 import { EditorDescriptor, IEditorRegistry, Extensions as EditorExtensions } from 'vs/workbench/browser/editor';
 import { SyncDescriptor } from 'vs/platform/instantiation/common/descriptors';
@@ -17,15 +16,15 @@ import { IInstantiationService } from 'vs/platform/instantiation/common/instanti
 
 import { QueryEditor } from 'sql/workbench/contrib/query/browser/queryEditor';
 import { QueryResultsEditor } from 'sql/workbench/contrib/query/browser/queryResultsEditor';
-import { QueryResultsInput } from 'sql/workbench/contrib/query/common/queryResultsInput';
+import { QueryResultsInput } from 'sql/workbench/common/editor/query/queryResultsInput';
 import * as queryContext from 'sql/workbench/contrib/query/common/queryContext';
 import {
 	RunQueryKeyboardAction, RunCurrentQueryKeyboardAction, CancelQueryKeyboardAction, RefreshIntellisenseKeyboardAction, ToggleQueryResultsKeyboardAction,
 	RunQueryShortcutAction, RunCurrentQueryWithActualPlanKeyboardAction, FocusOnCurrentQueryKeyboardAction, ParseSyntaxAction
 } from 'sql/workbench/contrib/query/browser/keyboardQueryActions';
-import * as gridActions from 'sql/workbench/contrib/editData/common/gridActions';
+import * as gridActions from 'sql/workbench/contrib/editData/browser/gridActions';
 import * as gridCommands from 'sql/workbench/contrib/editData/browser/gridCommands';
-import * as Constants from 'sql/workbench/contrib/query/common/constants';
+import * as Constants from 'sql/platform/query/common/constants';
 import { localize } from 'vs/nls';
 import { IWorkbenchContributionsRegistry, Extensions as WorkbenchExtensions } from 'vs/workbench/common/contributions';
 
@@ -34,15 +33,15 @@ import { TimeElapsedStatusBarContributions, RowCountStatusBarContributions, Quer
 import { SqlFlavorStatusbarItem, ChangeFlavorAction } from 'sql/workbench/contrib/query/browser/flavorStatus';
 import { IEditorInputFactoryRegistry, Extensions as EditorInputFactoryExtensions } from 'vs/workbench/common/editor';
 import { FileQueryEditorInput } from 'sql/workbench/contrib/query/common/fileQueryEditorInput';
-import { FileQueryEditorInputFactory, UntitledQueryEditorInputFactory, QueryEditorLanguageAssociation } from 'sql/workbench/contrib/query/common/queryInputFactory';
-import { UntitledQueryEditorInput } from 'sql/workbench/contrib/query/common/untitledQueryEditorInput';
-import { ILanguageAssociationRegistry, Extensions as LanguageAssociationExtensions } from 'sql/workbench/common/languageAssociation';
+import { FileQueryEditorInputFactory, UntitledQueryEditorInputFactory, QueryEditorLanguageAssociation } from 'sql/workbench/contrib/query/browser/queryInputFactory';
+import { UntitledQueryEditorInput } from 'sql/workbench/common/editor/query/untitledQueryEditorInput';
+import { ILanguageAssociationRegistry, Extensions as LanguageAssociationExtensions } from 'sql/workbench/services/languageAssociation/common/languageAssociation';
 import { NewQueryTask, OE_NEW_QUERY_ACTION_ID, DE_NEW_QUERY_COMMAND_ID } from 'sql/workbench/contrib/query/browser/queryActions';
-import { TreeNodeContextKey } from 'sql/workbench/contrib/objectExplorer/common/treeNodeContextKey';
-import { MssqlNodeContext } from 'sql/workbench/contrib/dataExplorer/browser/mssqlNodeContext';
+import { TreeNodeContextKey } from 'sql/workbench/services/objectExplorer/common/treeNodeContextKey';
+import { MssqlNodeContext } from 'sql/workbench/services/objectExplorer/browser/mssqlNodeContext';
 import { CommandsRegistry, ICommandService } from 'vs/platform/commands/common/commands';
 import { ManageActionContext } from 'sql/workbench/browser/actions';
-import { ItemContextKey } from 'sql/workbench/contrib/dashboard/browser/widgets/explorer/explorerTreeContext';
+import { ItemContextKey } from 'sql/workbench/contrib/dashboard/browser/widgets/explorer/explorerContext';
 
 export const QueryEditorVisibleCondition = ContextKeyExpr.has(queryContext.queryEditorVisibleId);
 export const ResultsGridFocusCondition = ContextKeyExpr.and(ContextKeyExpr.has(queryContext.resultsVisibleId), ContextKeyExpr.has(queryContext.resultsGridFocussedId));
@@ -58,10 +57,10 @@ Registry.as<ILanguageAssociationRegistry>(LanguageAssociationExtensions.Language
 	.registerLanguageAssociation(QueryEditorLanguageAssociation.languages, QueryEditorLanguageAssociation, QueryEditorLanguageAssociation.isDefault);
 
 Registry.as<IEditorRegistry>(EditorExtensions.Editors)
-	.registerEditor(new EditorDescriptor(QueryResultsEditor, QueryResultsEditor.ID, localize('queryResultsEditor.name', "Query Results")), [new SyncDescriptor(QueryResultsInput)]);
+	.registerEditor(EditorDescriptor.create(QueryResultsEditor, QueryResultsEditor.ID, localize('queryResultsEditor.name', "Query Results")), [new SyncDescriptor(QueryResultsInput)]);
 
 Registry.as<IEditorRegistry>(EditorExtensions.Editors)
-	.registerEditor(new EditorDescriptor(QueryEditor, QueryEditor.ID, localize('queryEditor.name', "Query Editor")), [new SyncDescriptor(FileQueryEditorInput), new SyncDescriptor(UntitledQueryEditorInput)]);
+	.registerEditor(EditorDescriptor.create(QueryEditor, QueryEditor.ID, localize('queryEditor.name', "Query Editor")), [new SyncDescriptor(FileQueryEditorInput), new SyncDescriptor(UntitledQueryEditorInput)]);
 
 const actionRegistry = <IWorkbenchActionRegistry>Registry.as(ActionExtensions.WorkbenchActions);
 
@@ -523,6 +522,11 @@ const registryProperties: { [path: string]: IConfigurationPropertySchema; } = {
 		'type': 'boolean',
 		'default': true,
 		'description': localize('mssql.query.ansiNulls', "Enable SET ANSI_NULLS")
+	},
+	'mssql.query.alwaysEncryptedParameterization': {
+		'type': 'boolean',
+		'default': false,
+		'description': localize('mssql.query.alwaysEncryptedParameterization', "Enable Parameterization for Always Encrypted")
 	}
 };
 

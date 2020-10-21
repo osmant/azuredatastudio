@@ -16,6 +16,7 @@ export interface IAccessibilityService {
 
 	alwaysUnderlineAccessKeys(): Promise<boolean>;
 	isScreenReaderOptimized(): boolean;
+	getAccessibilitySupport(): AccessibilitySupport;
 	setAccessibilitySupport(accessibilitySupport: AccessibilitySupport): void;
 }
 
@@ -31,3 +32,8 @@ export const enum AccessibilitySupport {
 }
 
 export const CONTEXT_ACCESSIBILITY_MODE_ENABLED = new RawContextKey<boolean>('accessibilityModeEnabled', false);
+
+export interface IAccessibilityInformation {
+	label: string;
+	role?: string;
+}

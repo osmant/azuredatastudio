@@ -23,8 +23,9 @@ import { StandardKeyboardEvent } from 'vs/base/browser/keyboardEvent';
 import { KeyCode } from 'vs/base/common/keyCodes';
 import * as DOM from 'vs/base/browser/dom';
 import { assign } from 'vs/base/common/objects';
-import { IComponent, IComponentDescriptor, IModelStore } from 'sql/platform/dashboard/browser/interfaces';
-import { ComponentEventType } from 'sql/workbench/api/common/sqlExtHostTypes';
+import { IComponent, IComponentDescriptor, IModelStore, ComponentEventType } from 'sql/platform/dashboard/browser/interfaces';
+import { isNumber } from 'vs/base/common/types';
+import { convertSize, convertSizeToNumber } from 'sql/base/browser/dom';
 
 @Component({
 	selector: 'modelview-inputBox',
@@ -192,11 +193,11 @@ export default class InputBoxComponent extends ComponentBase implements ICompone
 	}
 
 	private layoutInputBox(): void {
-		if (this.width) {
-			this.inputElement.width = this.convertSizeToNumber(this.width);
+		if (isNumber(this.width) || this.width) {
+			this.inputElement.width = convertSizeToNumber(this.width);
 		}
-		if (this.height) {
-			this.inputElement.setHeight(this.convertSize(this.height));
+		if (isNumber(this.height) || this.height) {
+			this.inputElement.setHeight(convertSize(this.height));
 		}
 	}
 
@@ -216,10 +217,10 @@ export default class InputBoxComponent extends ComponentBase implements ICompone
 			input.inputElement.type = this.inputType;
 			if (this.inputType === 'number') {
 				input.inputElement.step = 'any';
-				if (this.min) {
+				if (isNumber(this.min)) {
 					input.inputElement.min = this.min.toString();
 				}
-				if (this.max) {
+				if (isNumber(this.max)) {
 					input.inputElement.max = this.max.toString();
 				}
 			}
@@ -230,10 +231,10 @@ export default class InputBoxComponent extends ComponentBase implements ICompone
 		input.setEnabled(this.enabled);
 		this.layoutInputBox();
 		if (this.multiline) {
-			if (this.rows) {
+			if (isNumber(this.rows)) {
 				this.inputElement.rows = this.rows;
 			}
-			if (this.columns) {
+			if (isNumber(this.columns)) {
 				this.inputElement.columns = this.columns;
 			}
 		}
@@ -243,6 +244,7 @@ export default class InputBoxComponent extends ComponentBase implements ICompone
 		}
 
 		input.inputElement.required = this.required;
+		input.inputElement.readOnly = this.readOnly;
 	}
 
 	// CSS-bound properties
@@ -313,6 +315,14 @@ export default class InputBoxComponent extends ComponentBase implements ICompone
 
 	public set multiline(newValue: boolean) {
 		this.setPropertyFromUI<azdata.InputBoxProperties, boolean>((props, value) => props.multiline = value, newValue);
+	}
+
+	public get readOnly(): boolean {
+		return this.getPropertyOrDefault<azdata.InputBoxProperties, boolean>((props) => props.readOnly, false);
+	}
+
+	public set readOnly(newValue: boolean) {
+		this.setPropertyFromUI<azdata.InputBoxProperties, boolean>((props, value) => props.readOnly = value, newValue);
 	}
 
 	public get required(): boolean {

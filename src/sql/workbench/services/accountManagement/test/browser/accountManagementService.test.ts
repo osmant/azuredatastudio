@@ -7,14 +7,15 @@ import * as assert from 'assert';
 import * as azdata from 'azdata';
 import * as TypeMoq from 'typemoq';
 import AccountStore from 'sql/platform/accounts/common/accountStore';
-import { AccountDialogController } from 'sql/workbench/contrib/accounts/browser/accountDialogController';
+import { AccountDialogController } from 'sql/workbench/services/accountManagement/browser/accountDialogController';
 import { AccountManagementService } from 'sql/workbench/services/accountManagement/browser/accountManagementService';
 import { AccountAdditionResult, AccountProviderAddedEventParams, UpdateAccountListEventParams } from 'sql/platform/accounts/common/eventTypes';
 import { IAccountStore } from 'sql/platform/accounts/common/interfaces';
 import { AccountProviderStub } from 'sql/platform/accounts/test/common/testAccountManagementService';
 import { InstantiationService } from 'vs/platform/instantiation/common/instantiationService';
-import { TestStorageService } from 'vs/workbench/test/workbenchTestServices';
+import { TestStorageService } from 'vs/workbench/test/common/workbenchTestServices';
 import { EventVerifierSingle } from 'sql/base/test/common/event';
+import { TestNotificationService } from 'vs/platform/notification/test/common/testNotificationService';
 
 // SUITE CONSTANTS /////////////////////////////////////////////////////////
 const hasAccountProvider: azdata.AccountProviderMetadata = {
@@ -505,8 +506,10 @@ function getTestState(): AccountManagementState {
 	// Create mock memento
 	let mockMemento = {};
 
+	const testNotificationService = new TestNotificationService();
+
 	// Create the account management service
-	let ams = new AccountManagementService(mockMemento, mockInstantiationService.object, new TestStorageService(), null, null);
+	let ams = new AccountManagementService(mockMemento, mockInstantiationService.object, new TestStorageService(), null, null, undefined, testNotificationService);
 
 	// Wire up event handlers
 	let evUpdate = new EventVerifierSingle<UpdateAccountListEventParams>();
